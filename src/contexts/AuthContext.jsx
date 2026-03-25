@@ -14,16 +14,33 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        // Initial Session Check
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-                fetchProfile(session.user);
-            } else {
+        const timeout = setTimeout(() => {
+            if (loading) {
+                console.error("Auth Timeout: Supabase did not respond in time.");
+                setError("การเชื่อมต่อกับฐานข้อมูลล่าช้า กรุณาตรวจสอบอินเทอร์เน็ตหรือค่าตัวแทน (Env Vars)");
                 setLoading(false);
             }
-        });
+        }, 8000); // 8 second timeout
+
+        // Initial Session Check
+        supabase.auth.getSession()
+            .then(({ data: { session } }) => {
+                clearTimeout(timeout);
+                if (session) {
+                    fetchProfile(session.user);
+                } else {
+                    setLoading(false);
+                }
+            })
+            .catch(err => {
+                clearTimeout(timeout);
+                console.error("Session check error:", err);
+                setError("ไม่สามารถเชื่อมต่อกับฐานข้อมูลได้: " + err.message);
+                setLoading(false);
+            });
 
         // Listen for Auth Changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -35,18 +52,21 @@ export const AuthProvider = ({ children }) => {
             }
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            clearTimeout(timeout);
+            subscription.unsubscribe();
+        };
     }, []);
 
     const fetchProfile = async (supabaseUser) => {
         try {
-            const { data: profile, error } = await supabase
+            const { data: profile, fetchError } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', supabaseUser.id)
                 .single();
 
-            if (error && error.code === 'PGRST116') {
+            if (fetchError && fetchError.code === 'PGRST116') {
                 // No profile: Create default
                 const newProfile = {
                     id: supabaseUser.id,
@@ -93,12 +113,36 @@ export const AuthProvider = ({ children }) => {
     const value = {
         user,
         loading,
+        error,
         login,
         logout,
         isOwner: user?.role === 'owner',
         isCashier: user?.role === 'cashier',
         isAuthenticated: !!user
     };
+
+    if (error) {
+        return (
+            <div style={{
+                height: '100vh',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'column',
+                padding: '2rem',
+                textAlign: 'center'
+            }}>
+                <h2 style={{ color: '#ef4444' }}>การเชื่อมต่อผิดพลาด</h2>
+                <p style={{ color: '#6b7280', margin: '1rem 0' }}>{error}</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    style={{ padding: '8px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px' }}
+                >
+                    ลองอีกครั้ง (Retry)
+                </button>
+            </div>
+        );
+    }
 
     return (
         <AuthContext.Provider value={value}>
