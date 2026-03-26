@@ -630,7 +630,7 @@ const POS = () => {
                         <ProductCard
                             key={product.id}
                             product={product}
-                            isSelected={reorderSelection?.id === product.id || draggedProduct?.id === product.id}
+                            isSelected={draggedProduct?.id === product.id}
                             isReorderMode={isReorderMode}
                             onClick={handleProductClick}
                             onHide={handleHideProduct}
