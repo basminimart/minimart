@@ -44,6 +44,12 @@ export const CartProvider = ({ children }) => {
         }
     }, []);
 
+    // Calculate totals
+    const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+    const tax = subtotal * 0; // 0% tax for now, can be configured
+    const total = subtotal + tax;
+    const itemCount = cart.reduce((count, item) => count + item.quantity, 0);
+
     // Save to localStorage
     useEffect(() => {
         localStorage.setItem('pos_current_cart', JSON.stringify(cart));
@@ -80,11 +86,6 @@ export const CartProvider = ({ children }) => {
         return () => channel.close();
     }, [cart, total, lastPayment]);
 
-    // Calculate totals
-    const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-    const tax = subtotal * 0; // 0% tax for now, can be configured
-    const total = subtotal + tax;
-    const itemCount = cart.reduce((count, item) => count + item.quantity, 0);
 
     const addToCart = React.useCallback((product, quantity = 1) => {
         if (!product || !product.id) {
