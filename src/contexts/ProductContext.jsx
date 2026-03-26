@@ -279,24 +279,24 @@ export const ProductProvider = ({ children }) => {
                 setConnectionStatus('syncing');
 
                 // Step 2: Fire ALL batch requests in parallel! 🚀
-                // PRIORITY 1: Fetch all "Storefront" products first (usually smaller set)
-                console.log(`[Turbo] 🎯 Fetching Storefront products first...`);
-                const { data: storeProducts, error: storeError } = await fetchWithRetry(() =>
+                // PRIORITY 1: Fetch all "Active" products for POS and Storefront (Instant UI)
+                console.log(`[Turbo] 🎯 Fetching Active POS & Storefront products first...`);
+                const { data: activeProducts, error: activeError } = await fetchWithRetry(() =>
                     supabase
                         .from('products')
                         .select(MAIN_COLUMNS)
-                        .eq('showInStore', true)
+                        .or('showInPOS.eq.true,showInStore.eq.true,showInPOS.is.null')
                         .order('name')
                 );
 
-                if (!storeError && storeProducts && !cancelled) {
-                    setProducts(storeProducts);
-                    setLoading(false); // Stop full-page loader once storefront is ready
+                if (!activeError && activeProducts && !cancelled) {
+                    setProducts(activeProducts);
+                    setLoading(false); // Stop full-page loader once active items are ready
                     setConnectionStatus('syncing');
-                    console.log(`[Turbo] ✅ Storefront ready: ${storeProducts.length} items`);
+                    console.log(`[Turbo] ✅ Active products ready: ${activeProducts.length} items`);
                 }
 
-                // PRIORITY 2: Fetch the rest in parallel batches
+                // PRIORITY 2: Fetch the rest of the inventory (Hidden/Inactive) in parallel batches
                 const BATCH = 500;
                 const batchPromises = [];
                 for (let from = 0; from < count; from += BATCH) {
