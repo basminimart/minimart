@@ -73,3 +73,8 @@ ADD COLUMN IF NOT EXISTS items JSONB,
 ADD COLUMN IF NOT EXISTS total NUMERIC,
 ADD COLUMN IF NOT EXISTS "paymentMethod" TEXT;
 
+-- =====================================================
+-- 🔄 บังคับรีเฟรช Schema Cache (แก้ error 'in the schema cache')
+-- =====================================================
+NOTIFY pgrst, 'reload schema';
+
