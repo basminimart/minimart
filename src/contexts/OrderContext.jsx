@@ -22,20 +22,36 @@ export const OrderProvider = ({ children }) => {
         const loadOrders = async () => {
             setLoading(true);
             try {
-                // 1. Fetch orders from machine drive
+                // 1. Fetch from local machine (IndexedDB/Disk)
                 const diskData = await diskDB.getAll('orders');
                 if (diskData.length > 0) {
                     const sorted = diskData.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
                     setOrders(sorted);
-                    const hasPending = sorted.some(order => order.status === 'pending');
-                    setPendingOrdersActive(hasPending);
+                    setPendingOrdersActive(sorted.some(o => o.status === 'pending'));
                 }
 
-                // Cloud migration removed. Data flows locally for speed.
+                // 2. Fetch from Cloud (Supabase) if disk is empty or to sync
+                const { data: cloudData, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .order('createdAt', { ascending: false });
+
+                if (!error && cloudData && cloudData.length > 0) {
+                    const mapped = cloudData.map(o => ({
+                        ...o,
+                        customer: o.customer || { name: o.customerName, phone: o.customerPhone, address: o.customerAddress }
+                    }));
+                    setOrders(mapped);
+                    setPendingOrdersActive(mapped.some(o => o.status === 'pending'));
+                    // Background sync to disk
+                    await diskDB.bulkPut('orders', mapped);
+                } else if (error) {
+                    console.error("[Cloud] Order fetch error:", error.message);
+                }
+
                 setLoading(false);
             } catch (err) {
-                console.error("[Disk Storage] Order load failed:", err);
-            } finally {
+                console.error("[Storage] Order load failed:", err);
                 setLoading(false);
             }
         };
