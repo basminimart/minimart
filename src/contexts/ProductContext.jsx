@@ -58,7 +58,17 @@ export const ProductProvider = ({ children }) => {
 
                 // 2. Fallback to Supabase for Vercel deployment
                 console.log('[ProductContext] Local disk empty, fetching from Supabase...');
-                console.log('[ProductContext] Supabase URL:', supabase.supabaseUrl);
+                console.log('[ProductContext] supabase object:', supabase);
+                console.log('[ProductContext] supabase.from:', supabase?.from);
+                
+                if (!supabase || !supabase.from) {
+                    console.error('[ProductContext] Supabase client not initialized properly!');
+                    setProducts([]);
+                    setConnectionStatus('error');
+                    setLoading(false);
+                    return;
+                }
+                
                 const { data: supabaseData, error } = await supabase
                     .from('products')
                     .select(MAIN_COLUMNS);
