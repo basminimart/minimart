@@ -51,15 +51,42 @@ export const ProductProvider = ({ children }) => {
                     setLoading(false);
                     setConnectionStatus('offline_disk');
                     console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
+                    return; // Exit early if local data loaded successfully
                 }
 
-                // Cloud sync removed for maximum speed.
-                setConnectionStatus('offline_disk');
-                setLoading(false);
-                setConnectionStatus('connected');
+                // 2. Fallback to Supabase for Vercel deployment
+                console.log('[ProductContext] Local disk empty, fetching from Supabase...');
+                const { data: supabaseData, error } = await supabase
+                    .from('products')
+                    .select(MAIN_COLUMNS);
+                
+                if (error) {
+                    console.error('[Supabase] Fetch error:', error);
+                    setConnectionStatus('error');
+                } else if (supabaseData && supabaseData.length > 0) {
+                    setProducts(supabaseData);
+                    setConnectionStatus('connected');
+                    console.log(`[Supabase] ☁️ Loaded ${supabaseData.length} products from cloud.`);
+                } else {
+                    setProducts([]);
+                    setConnectionStatus('connected');
+                    console.log('[Supabase] No products found in cloud.');
+                }
                 setLoading(false);
             } catch (err) {
-                console.error("[Disk Storage] Data load failed:", err);
+                console.error("[ProductContext] Data load failed:", err);
+                // Final fallback: try Supabase even if diskDB threw error
+                try {
+                    const { data: supabaseData } = await supabase
+                        .from('products')
+                        .select(MAIN_COLUMNS);
+                    if (supabaseData && supabaseData.length > 0) {
+                        setProducts(supabaseData);
+                        setConnectionStatus('connected');
+                    }
+                } catch (supabaseErr) {
+                    console.error('[Supabase] Final fallback failed:', supabaseErr);
+                }
                 setLoading(false);
             }
         };
