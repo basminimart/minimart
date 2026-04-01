@@ -158,8 +158,11 @@ const server = http.createServer(async (req, res) => {
                         res.end('Collection not found');
                     }
                 } catch (e) {
+                    console.error('[Server] POST Error:', e.message);
+                    console.error('[Server] Request body:', body.substring(0, 200));
+                    console.error('[Server] Stack:', e.stack);
                     res.writeHead(500);
-                    res.end(JSON.stringify({ error: e.message }));
+                    res.end(JSON.stringify({ error: e.message, stack: e.stack }));
                 }
             });
             return;
