@@ -1,11 +1,41 @@
 import http from 'http';
 import fs from 'fs/promises';
 import path from 'path';
-import { createWriteStream } from 'fs';
+import { createWriteStream, existsSync, createReadStream } from 'fs';
 
 const DB_FILE = path.join(process.cwd(), 'local_database.json');
 const UPLOAD_DIR = path.join(process.cwd(), 'product_images');
+const DIST_DIR = path.join(process.cwd(), 'dist');
 const PORT = 5005;
+
+// MIME types for static files
+const MIME_TYPES = {
+    '.html': 'text/html',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon'
+};
+
+// Serve static files from dist folder
+async function serveStatic(filePath, res) {
+    try {
+        const ext = path.extname(filePath).toLowerCase();
+        const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+        
+        const content = await fs.readFile(filePath);
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content);
+    } catch (e) {
+        res.writeHead(404);
+        res.end('Not found');
+    }
+}
 
 // Initialization
 async function ensureInit() {
@@ -33,25 +63,23 @@ async function ensureInit() {
 let dbCache = null;
 
 async function readDB() {
-    if (dbCache) return dbCache; // Fast track: return from memory
+    if (dbCache) return dbCache;
     try {
         const data = await fs.readFile(DB_FILE, 'utf-8');
         dbCache = JSON.parse(data);
-        console.log(`[Database] ⚡ Loaded ${data.length} bytes into memory.`);
+        console.log(`[Database] Loaded ${data.length} bytes into memory.`);
         return dbCache;
     } catch (err) {
-        console.error("[Database] ⚠️ Read error:", err.message);
+        console.error("[Database] Read error:", err.message);
         return { products: [], orders: [], shifts: [], customers: [] };
     }
 }
 
 async function writeDB(data) {
-    dbCache = data; // Update memory cache immediately for instant subsequent reads
+    dbCache = data;
     data.meta = { lastUpdate: new Date().toISOString() };
-    
-    // Non-blocking write to file to keep API response fast
     fs.writeFile(DB_FILE, JSON.stringify(data, null, 2)).catch(err => {
-        console.error("[Database] ❌ Background write failed:", err.message);
+        console.error("[Database] Background write failed:", err.message);
     });
 }
 
@@ -69,6 +97,23 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://localhost:${PORT}`);
     const parts = url.pathname.split('/').filter(p => p);
+
+    // Serve static files from dist folder
+    if (parts.length === 0 || parts[0] === '') {
+        // Root path - serve index.html
+        return await serveStatic(path.join(DIST_DIR, 'index.html'), res);
+    }
+    
+    // Check if it's a static file in dist
+    const staticPath = path.join(DIST_DIR, url.pathname);
+    try {
+        const stat = await fs.stat(staticPath);
+        if (stat.isFile()) {
+            return await serveStatic(staticPath, res);
+        }
+    } catch {
+        // Not a file, continue to API routes
+    }
 
     // Serve Images
     if (parts[0] === 'images') {
