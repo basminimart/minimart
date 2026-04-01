@@ -30,7 +30,7 @@ async function syncToCloud() {
     console.log(`📦 พบสินค้า ${products.length} รายการ กำลังอัปเดตบน Cloud...`);
 
     // 2. อัปเดตข้อมูลขึ้น Supabase (ล้างของเก่าแล้วลงของใหม่เพื่อให้ตรงกัน 100%)
-    // หมายเหตุ: วิธีนี้ปลอดภัยที่สุดเพื่อให้รายการหน้าเว็บตรงกับหน้า POS
+    // หมายเหตุ: วิธีนี้ปลอดภัยที่สุดเพื่อให้รายการหน้าเว็บตรงกับหน่า POS
     const { error: deleteError } = await supabase
       .from('products')
       .delete()
@@ -40,15 +40,33 @@ async function syncToCloud() {
 
     // เตรียมข้อมูล (ลบฟิลด์ที่ Supabase ไม่ต้องการออก)
     const cloudProducts = products.map(p => {
-        const { posIndex, ...rest } = p; // กรองฟิลด์เสริมออก
-        return rest;
+        const cleanProduct = { ...p };
+        delete cleanProduct.posIndex; // กรองฟิลด์เสริมออก
+        return cleanProduct;
     });
 
-    const { error: insertError } = await supabase
-      .from('products')
-      .insert(cloudProducts);
+    // แบ่ง insert เป็น batch ย่อย (100 รายการต่อครั้ง)
+    const BATCH_SIZE = 100;
+    const totalBatches = Math.ceil(cloudProducts.length / BATCH_SIZE);
+    
+    for (let i = 0; i < totalBatches; i++) {
+      const batch = cloudProducts.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+      console.log(`  📤 Batch ${i + 1}/${totalBatches}: ${batch.length} รายการ...`);
+      
+      const { error: insertError } = await supabase
+        .from('products')
+        .insert(batch);
 
-    if (insertError) throw insertError;
+      if (insertError) {
+        console.error(`❌ Batch ${i + 1} failed:`, insertError.message);
+        throw insertError;
+      }
+      
+      // หน่วงเวลาเล็กน้อยเพื่อไม่ให้ rate limit
+      if (i < totalBatches - 1) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
 
     console.log("✅ ส่งข้อมูลขึ้นหน้าเว็บออนไลน์สำเร็จแล้ว! ลูกค้าเห็นสินค้าแล้วครับ!");
 
