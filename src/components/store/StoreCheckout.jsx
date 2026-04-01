@@ -195,7 +195,7 @@ const StoreCheckout = () => {
                 paymentMethod,
                 slipUrl,
                 status: 'pending',
-                date: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 type: 'store'
             };
 
