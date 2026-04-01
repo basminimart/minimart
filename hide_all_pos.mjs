@@ -1,26 +1,37 @@
-// 🚫 Hide ALL products from POS
-import { createClient } from '@supabase/supabase-js';
+import fs from 'fs/promises';
+import path from 'path';
 
-const SUPABASE_URL = 'https://igwwmzgszgzlaawcbyxk.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlnd3dtemdzemd6bGFhd2NieXhrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ2MzQ5NywiZXhwIjoyMDkwMDM5NDk3fQ.0r_FWYSr3wyZ2MHvCTcJQ0fRHJXqKMP34wiLPh0IfN0';
+const DB_FILE = path.join(process.cwd(), 'local_database.json');
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+async function hideAll() {
+    try {
+        console.log("🔍 Reading local_database.json...");
+        const data = await fs.readFile(DB_FILE, 'utf-8');
+        const db = JSON.parse(data);
 
-async function main() {
-    console.log('📦 Updating 2326 products: setting showInPOS = false...');
-    
-    const { error } = await supabase
-        .from('products')
-        .update({ showInPOS: false })
-        .neq('id', '00000000-0000-0000-0000-000000000001'); // Match all
-    
-    if (error) {
-        console.error('❌ Failed:', error.message);
-    } else {
-        console.log('✅ Success! All products hidden from POS.');
-        console.log('Now you can manually choose which ones to show in Inventory.');
+        if (!db.products) {
+            console.error("❌ No products collection found!");
+            return;
+        }
+
+        console.log(`📦 Found ${db.products.length} products.`);
+        console.log("🙈 Hiding all products from POS (setting showInPOS = false)...");
+
+        const updatedProducts = db.products.map(p => ({
+            ...p,
+            showInPOS: false // Hide from POS by default as requested
+        }));
+
+        db.products = updatedProducts;
+        db.meta = { lastUpdate: new Date().toISOString() };
+
+        await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2));
+        console.log("✅ Successfully hid all products from POS!");
+        console.log("💡 You can now manually select which ones to show in the Inventory page.");
+
+    } catch (err) {
+        console.error("❌ Error updating database:", err.message);
     }
-    process.exit(0);
 }
 
-main();
+hideAll();

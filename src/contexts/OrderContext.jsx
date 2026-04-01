@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { diskDB } from '../utils/diskStorage';
 import { supabase } from '../services/supabase';
 
 const OrderContext = createContext(null);
@@ -17,126 +18,64 @@ export const OrderProvider = ({ children }) => {
     const [newOrderAlert, setNewOrderAlert] = useState(false);
     const { user } = useAuth();
 
-    // Effect to fetch initial orders and set up real-time subscription
     useEffect(() => {
-        if (!user) {
-            setOrders([]);
-            setLoading(false);
-            return;
-        }
-
-        const fetchOrders = async () => {
-            let allOrders = [];
-            let from = 0;
-            const step = 1000;
-            let hasMore = true;
-
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .order('createdAt', { ascending: false })
-                    .range(from, from + step - 1);
-                
-                if (error) {
-                    console.error("Error fetching orders:", error);
-                    hasMore = false;
-                } else if (data) {
-                    allOrders = [...allOrders, ...data];
-                    if (data.length < step) {
-                        hasMore = false;
-                    } else {
-                        from += step;
-                    }
-                } else {
-                    hasMore = false;
+        const loadOrders = async () => {
+            setLoading(true);
+            try {
+                // 1. Fetch orders from machine drive
+                const diskData = await diskDB.getAll('orders');
+                if (diskData.length > 0) {
+                    const sorted = diskData.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    setOrders(sorted);
+                    const hasPending = sorted.some(order => order.status === 'pending');
+                    setPendingOrdersActive(hasPending);
                 }
+
+                // Cloud migration removed. Data flows locally for speed.
+                setLoading(false);
+            } catch (err) {
+                console.error("[Disk Storage] Order load failed:", err);
+            } finally {
+                setLoading(false);
             }
-            setOrders(allOrders);
-            // Initial check for pending orders
-            const hasPending = allOrders.some(order => order.status === 'pending');
-            setPendingOrdersActive(hasPending);
-            setLoading(false);
         };
 
-        fetchOrders();
+        loadOrders();
 
-        // Real-time updates
+        // 3. 🚀 REAL-TIME CLOUD SYNC: Listen for online orders from Vercel/Store
+        console.log("[Hybrid Mode] 📡 Listening for incoming online orders...");
         const channel = supabase
-            .channel('orders_changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                if (payload.eventType === 'INSERT') {
-                    setOrders(prev => {
-                        const updatedOrders = [payload.new, ...prev];
-                        if (payload.new.status === 'pending') {
-                            setPendingOrdersActive(true);
-                            setNewOrderAlert(true);
-                        }
-                        return updatedOrders;
-                    });
-                } else if (payload.eventType === 'UPDATE') {
-                    setOrders(prev => {
-                        const updated = prev.map(o => o.id === payload.new.id ? payload.new : o);
-                        const hasPending = updated.some(order => order.status === 'pending');
-                        setPendingOrdersActive(hasPending);
-                        return updated;
-                    });
-                } else if (payload.eventType === 'DELETE') {
-                    setOrders(prev => {
-                        const updatedOrders = prev.filter(o => o.id !== payload.old.id);
-                        const hasPending = updatedOrders.some(order => order.status === 'pending');
-                        setPendingOrdersActive(hasPending);
-                        return updatedOrders;
-                    });
-                }
+            .channel('public:orders')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
+                const newOrder = payload.new;
+                console.log("[Hybrid Mode] 🔔 NEW ONLINE ORDER RECEIVED:", newOrder.id);
+                
+                // Save to Machine Drive immediately
+                await diskDB.put('orders', newOrder);
+                
+                // Update Local UI
+                setOrders(prev => {
+                    if (prev.find(o => o.id === newOrder.id)) return prev;
+                    return [newOrder, ...prev];
+                });
+                setNewOrderAlert(true);
+                
+                // Optional: Play alert sound if you have one
             })
             .subscribe();
 
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [user]); // Re-run if user changes (e.g., login/logout)
-
-    // Effect to update pendingOrdersActive based on current orders state
-    useEffect(() => {
-        if (orders.length > 0) {
-            const hasPending = orders.some(order => order.status === 'pending');
-            setPendingOrdersActive(hasPending);
-        } else {
-            setPendingOrdersActive(false);
-        }
-    }, [orders]);
-
-
-    const generateOrderNumber = () => {
-        const date = new Date();
-        const datePart = `${date.getFullYear().toString().slice(-2)}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-
-        // Safely get today's orders count
-        const todayStr = date.toLocaleDateString('en-CA'); // YYYY-MM-DD
-        const todayOrders = orders.filter(o => {
-            const oDate = new Date(o.createdAt || new Date()).toLocaleDateString('en-CA');
-            return oDate === todayStr;
-        });
-
-        const sequence = (todayOrders.length + 1).toString().padStart(4, '0');
-        return `W-${datePart}-${sequence}`;
-    };
+    }, []);
 
     const createOrder = async (orderData) => {
         const date = new Date();
         const datePart = `${date.getFullYear().toString().slice(-2)}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-        const todayStart = new Date(date.setHours(0,0,0,0)).toISOString();
-        const todayEnd = new Date(date.setHours(23,59,59,999)).toISOString();
+        const todayStr = date.toLocaleDateString('en-CA');
+        const todayCount = orders.filter(o => new Date(o.createdAt).toLocaleDateString('en-CA') === todayStr).length;
 
-        // Query today's count directly to handle cases where 'orders' state is empty (customer view)
-        const { count } = await supabase
-            .from('orders')
-            .select('*', { count: 'exact', head: true })
-            .gte('createdAt', todayStart)
-            .lte('createdAt', todayEnd);
-
-        const sequence = ( (count || 0) + 1).toString().padStart(4, '0');
+        const sequence = (todayCount + 1).toString().padStart(4, '0');
         const customId = `W-${datePart}-${sequence}`;
 
         const newOrder = {
@@ -148,55 +87,49 @@ export const OrderProvider = ({ children }) => {
             paymentStatus: orderData.paymentMethod === 'cod' ? 'pending' : 'pending_verification'
         };
 
-        try {
-            const { data, error } = await supabase
-                .from('orders')
-                .insert(newOrder)
-                .select()
-                .single();
+        // Prepare data for Supabase (Mapping to new schema)
+        const supabaseOrder = {
+            id: newOrder.id,
+            customerName: orderData.customer?.name || orderData.customerName || 'Guest',
+            customerPhone: orderData.customer?.phone || orderData.customerPhone || '',
+            customerAddress: orderData.customer?.address || orderData.customerAddress || '',
+            items: orderData.items,
+            total: orderData.total,
+            status: 'pending',
+            paymentMethod: orderData.paymentMethod || 'cod',
+            paymentStatus: orderData.paymentStatus || 'pending',
+            paymentProof: orderData.slipUrl || orderData.paymentProof || null, // Map slipUrl to paymentProof
+            note: orderData.customer?.memo || orderData.note || '',
+            createdAt: newOrder.createdAt,
+            updatedAt: newOrder.updatedAt
+        };
 
-            if (error) throw error;
-            setNewOrderAlert(true);
-            return data;
-        } catch (error) {
-            console.error("Error creating order:", error);
-            throw error;
-        }
+        // Save order directly to disk file (local_database.json)
+        await diskDB.put('orders', newOrder);
+        setOrders(prev => [newOrder, ...prev]);
+        setNewOrderAlert(true);
+        
+        supabase.from('orders').insert(supabaseOrder).then(({ error }) => {
+            if (error) console.error("[Supabase] Order sync failed:", error.message);
+        });
+        return newOrder;
     };
 
     const updateOrderStatus = async (orderId, newStatus) => {
-        try {
-            const { error } = await supabase
-                .from('orders')
-                .update({
-                    status: newStatus,
-                    updatedAt: new Date().toISOString()
-                })
-                .eq('id', orderId);
-            
-            if (error) throw error;
-        } catch (error) {
-            console.error("Error updating order status:", error);
-            throw error;
-        }
-    };
+        const order = orders.find(o => o.id === orderId);
+        if (!order) return;
 
-    const acknowledgeNewOrder = () => {
-        setNewOrderAlert(false);
+        const updatedOrder = { ...order, status: newStatus, updatedAt: new Date().toISOString() };
+        await diskDB.put('orders', updatedOrder);
+        setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+
+        supabase.from('orders').update({ status: newStatus }).eq('id', orderId).then(() => {});
     };
 
     const deleteOrder = async (orderId) => {
-        try {
-            const { error } = await supabase
-                .from('orders')
-                .delete()
-                .eq('id', orderId);
-            
-            if (error) throw error;
-        } catch (error) {
-            console.error("Error deleting order:", error);
-            throw error;
-        }
+        await diskDB.delete('orders', orderId);
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        supabase.from('orders').delete().eq('id', orderId).then(() => {});
     };
 
     const value = {
@@ -206,13 +139,9 @@ export const OrderProvider = ({ children }) => {
         pendingOrdersActive,
         createOrder,
         updateOrderStatus,
-        acknowledgeNewOrder,
+        acknowledgeNewOrder: () => setNewOrderAlert(false),
         deleteOrder
     };
 
-    return (
-        <OrderContext.Provider value={value}>
-            {children}
-        </OrderContext.Provider>
-    );
+    return <OrderContext.Provider value={value}>{children}</OrderContext.Provider>;
 };

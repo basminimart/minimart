@@ -7,7 +7,7 @@ import Input from '../components/common/Input';
 import Button from '../components/common/Button';
 import PaymentModal from '../components/pos/PaymentModal';
 import ParkedBillsModal from '../components/pos/ParkedBillsModal';
-import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Clock, Bell, Monitor, Star, Grid, List as ListIcon, RefreshCw } from '../components/common/Icons';
+import { Search, ShoppingCart, Trash2, Plus, Minus, CreditCard, Clock, Bell, Monitor, Star, Grid, List as ListIcon, RefreshCw, Loader2 } from '../components/common/Icons';
 import { useOrder } from '../contexts/OrderContext';
 import QuickAddProductModal from '../components/pos/QuickAddProductModal';
 import ProductCard from '../components/pos/ProductCard'; 
@@ -50,29 +50,14 @@ const POS = () => {
     const isScanningRef = useRef(false);
     const searchInputRef = useRef(null);
 
-    // Optimized filtering and sorting
+    // Optimized filtering and sorting (Dynamic visibility via showInPOS)
     const filteredProducts = useMemo(() => {
         if (!products) return [];
         
-        // Final Filtered List
-        let result = products.filter(p => !p.isHero && (p.showInPOS === true || p.showInPOS === undefined));
+        // Final Filtered List - Show items that the user has selected to show in POS
+        let result = products.filter(p => p.showInPOS === true);
 
-        // Search Filter
-        if (debouncedSearchTerm) {
-            const search = debouncedSearchTerm.toLowerCase();
-            result = result.filter(p => 
-                (p.name || '').toLowerCase().includes(search) || 
-                (p.barcode || '').toLowerCase().includes(search) ||
-                (p.category || '').toLowerCase().includes(search)
-            );
-        }
-
-        // Category Filter
-        if (activeCategory !== 'All') {
-            result = result.filter(p => p.category === activeCategory);
-        }
-
-        // Apply Sorting (only if not searching, or keep order for category)
+        // Apply Sorting (Using posIndex for manual reordering compatibility)
         result.sort((a, b) => {
             const indexA = typeof a.posIndex === 'number' ? a.posIndex : 999999;
             const indexB = typeof b.posIndex === 'number' ? b.posIndex : 999999;
@@ -81,7 +66,7 @@ const POS = () => {
         });
 
         return result;
-    }, [products, debouncedSearchTerm, activeCategory]);
+    }, [products]);
 
     useEffect(() => {
         if (isReorderMode) {
@@ -125,18 +110,31 @@ const POS = () => {
     }, [isReorderMode, addToCart]);
 
     const saveReorder = async () => {
+        if (localOrderedProducts.length === 0) {
+            alert("ไม่มีสินค้าให้บันทึกครับ");
+            return;
+        }
+
         try {
             const updates = localOrderedProducts.map((p, index) => ({
                 id: p.id,
                 name: p.name,
                 posIndex: index
             }));
-            await updateProductOrder(updates);
-            alert("บันทึกตำแหน่งสินค้าเรียบร้อยแล้วครับ! ✨");
-            setIsReorderMode(false);
+            
+            console.log("[POS] Saving reorder updates:", updates.length);
+            const success = await updateProductOrder(updates);
+            
+            if (success) {
+                alert("✅ บันทึกตำแหน่งสินค้าสำเสร็จ! (ข้อมูลบันทึกในเครื่องเรียบร้อย)");
+                setIsReorderMode(false);
+                // Force state update by mapping if needed, but context handles it.
+            } else {
+                throw new Error("ระบบบันทึกล้มเหลว");
+            }
         } catch (error) {
             console.error("Save reorder error:", error);
-            alert("บันทึกไม่สำเร็จ: " + (error.message || "เกิดข้อผิดพลาดทางเทคนิค"));
+            alert("❌ บันทึกไม่สำเร็จ: " + (error.message || "เกิดข้อผิดพลาดทางเทคนิค"));
         }
     };
 
@@ -585,6 +583,10 @@ const POS = () => {
                             <div className="badge badge-syncing">
                                 <RefreshCw size={14} className="spin" /> {t('syncing') || 'Syncing...'}
                             </div>
+                        ) : connectionStatus === 'offline_disk' ? (
+                             <div className="badge badge-connected" style={{ background: '#10b981' }}>
+                                <Monitor size={14} /> {t('offline') || 'โหมดบันทึกในเครื่อง'}
+                            </div>
                         ) : connectionStatus === 'cached' ? (
                              <div className="badge badge-cached">
                                 <RefreshCw size={14} /> {t('offline') || 'Cached Mode'}
@@ -611,10 +613,7 @@ const POS = () => {
                             </Button>
                             <Button
                                 variant="outline"
-                                onClick={() => {
-                                    setIsReorderMode(false);
-                                    setReorderSelection(null);
-                                }}
+                                onClick={() => setIsReorderMode(false)}
                                 style={{ color: '#ef4444', borderColor: '#ef4444' }}
                             >
                                 {t('cancel')}
