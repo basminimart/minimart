@@ -87,12 +87,26 @@ export const OrderProvider = ({ children }) => {
             paymentStatus: orderData.paymentMethod === 'cod' ? 'pending' : 'pending_verification'
         };
 
-        // Save order directly to disk file (local_database.json)
+        // 1. Save to Supabase FIRST (cloud)
+        console.log('[OrderContext] Creating order in Supabase:', customId);
+        const { data: supabaseData, error: supabaseError } = await supabase
+            .from('orders')
+            .insert(newOrder)
+            .select()
+            .single();
+        
+        if (supabaseError) {
+            console.error('[OrderContext] Supabase insert error:', supabaseError);
+            throw new Error(`Failed to create order: ${supabaseError.message}`);
+        }
+        
+        console.log('[OrderContext] Order created in Supabase:', supabaseData?.id);
+
+        // 2. Save to local disk (for POS system)
         await diskDB.put('orders', newOrder);
         setOrders(prev => [newOrder, ...prev]);
         setNewOrderAlert(true);
         
-        supabase.from('orders').insert(newOrder).then(() => {});
         return newOrder;
     };
 

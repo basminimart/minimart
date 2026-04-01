@@ -52,15 +52,21 @@ CREATE POLICY "Allow all" ON customers FOR ALL USING (true) WITH CHECK (true);
 
 -- ==================== ORDERS ====================
 CREATE TABLE IF NOT EXISTS orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     "customerId" UUID REFERENCES customers(id),
+    customer JSONB,
     items JSONB DEFAULT '[]'::jsonb,
     total NUMERIC DEFAULT 0,
     status TEXT DEFAULT 'pending',
     "paymentMethod" TEXT DEFAULT 'cash',
+    "paymentStatus" TEXT DEFAULT 'pending',
+    "slipUrl" TEXT,
+    "deliveryTime" TEXT,
     "shiftId" UUID,
     type TEXT DEFAULT 'pos',
-    "createdAt" TIMESTAMPTZ DEFAULT now()
+    memo TEXT,
+    "createdAt" TIMESTAMPTZ DEFAULT now(),
+    "updatedAt" TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
