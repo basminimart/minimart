@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from '../services/supabase';
 
 const SERVER_URL = 'http://localhost:5005/api';
 
