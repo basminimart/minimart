@@ -42,71 +42,73 @@ export const ProductProvider = ({ children }) => {
 
         const loadData = async () => {
             setLoading(true);
+            
+            // Race between Supabase and local disk - whichever is faster
+            const supabasePromise = (async () => {
+                try {
+                    if (!supabase || !supabase.from) return [];
+                    
+                    // Fetch all products at once (no pagination for speed)
+                    const { data, error } = await supabase
+                        .from('products')
+                        .select(MAIN_COLUMNS)
+                        .limit(10000); // Get all at once
+                    
+                    if (error) throw error;
+                    console.log(`[Supabase] Loaded ${data?.length || 0} products`);
+                    return data || [];
+                } catch (err) {
+                    console.error('[Supabase] Error:', err.message);
+                    return [];
+                }
+            })();
+            
+            const diskPromise = (async () => {
+                try {
+                    const data = await diskDB.getAll('products');
+                    console.log(`[Disk] Loaded ${data.length} products`);
+                    return data;
+                } catch (err) {
+                    console.error('[Disk] Error:', err.message);
+                    return [];
+                }
+            })();
+            
+            // Try Supabase first with timeout
+            let products = [];
+            let source = '';
+            
             try {
-                // 1. Try Supabase first (faster for online deployment)
-                console.log('[ProductContext] Fetching from Supabase...');
-                
-                if (supabase && supabase.from) {
-                    let allProducts = [];
-                    let from = 0;
-                    const batchSize = 1000;
-                    let hasMore = true;
-                    
-                    while (hasMore) {
-                        const { data: batch, error } = await supabase
-                            .from('products')
-                            .select(MAIN_COLUMNS)
-                            .range(from, from + batchSize - 1);
-                        
-                        if (error) {
-                            console.error('[Supabase] Batch fetch error:', error);
-                            break;
-                        }
-                        
-                        if (batch && batch.length > 0) {
-                            allProducts = [...allProducts, ...batch];
-                            if (batch.length < batchSize) {
-                                hasMore = false;
-                            } else {
-                                from += batchSize;
-                            }
-                        } else {
-                            hasMore = false;
-                        }
-                    }
-                    
-                    console.log(`[Supabase] Loaded ${allProducts.length} products`);
-                    
-                    if (allProducts.length > 0) {
-                        setProducts(allProducts);
-                        setLoading(false);
-                        setConnectionStatus('connected');
-                        return; // Success, exit early
-                    }
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), 5000)
+                );
+                products = await Promise.race([supabasePromise, timeoutPromise]);
+                if (products.length > 0) {
+                    source = 'supabase';
                 }
-
-                // 2. Fallback to local disk if Supabase empty/failed
-                console.log('[ProductContext] Supabase empty, trying local disk...');
-                const diskData = await diskDB.getAll('products');
-                console.log(`[ProductContext] Disk returned ${diskData.length} products`);
-                
-                if (diskData.length > 0) {
-                    setProducts(diskData);
-                    setConnectionStatus('offline_disk');
-                    console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
-                } else {
-                    setProducts([]);
-                    setConnectionStatus('offline_disk');
-                    console.log('[ProductContext] No products found anywhere.');
-                }
-                setLoading(false);
-                
-            } catch (err) {
-                console.error("[ProductContext] Data load failed:", err);
-                setProducts([]);
-                setConnectionStatus('error');
-                setLoading(false);
+            } catch {
+                console.log('[ProductContext] Supabase timeout, trying disk...');
+                products = await diskPromise;
+                if (products.length > 0) source = 'disk';
             }
+            
+            // If Supabase failed/timeout, wait for disk
+            if (products.length === 0) {
+                products = await diskPromise;
+                if (products.length > 0) source = 'disk';
+            }
+            
+            // If still no products, wait for Supabase without timeout
+            if (products.length === 0) {
+                products = await supabasePromise;
+                if (products.length > 0) source = 'supabase';
+            }
+            
+            setProducts(products);
+            setConnectionStatus(source === 'supabase' ? 'connected' : source === 'disk' ? 'offline_disk' : 'error');
+            setLoading(false);
+            
+            console.log(`[ProductContext] Loaded ${products.length} products from ${source || 'none'}`);
         };
 
         loadData();
