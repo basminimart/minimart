@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { diskDB } from '../utils/diskStorage';
 import { supabase } from '../services/supabase';
@@ -17,6 +17,12 @@ export const OrderProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [newOrderAlert, setNewOrderAlert] = useState(false);
     const { user } = useAuth();
+    
+    // Use ref to track current orders for polling (avoid stale closure)
+    const ordersRef = useRef(orders);
+    useEffect(() => {
+        ordersRef.current = orders;
+    }, [orders]);
 
     useEffect(() => {
         const loadOrders = async () => {
@@ -120,14 +126,19 @@ export const OrderProvider = ({ children }) => {
                     .limit(20);
                 
                 if (!error && latestOrders) {
-                    // Check if we have new orders not in current state
-                    const currentIds = new Set(orders.map(o => o.id));
+                    // Use ref to get current orders (avoid stale closure)
+                    const currentIds = new Set(ordersRef.current.map(o => o.id));
                     const newOrders = latestOrders.filter(o => !currentIds.has(o.id));
                     
                     if (newOrders.length > 0) {
-                        console.log("[Polling] Found", newOrders.length, "new orders");
-                        // Add to state
-                        setOrders(prev => [...newOrders, ...prev]);
+                        console.log("[Polling] Found", newOrders.length, "new orders:", newOrders.map(o => o.id));
+                        // Add to state using functional update to avoid duplicates
+                        setOrders(prev => {
+                            const existingIds = new Set(prev.map(o => o.id));
+                            const trulyNew = newOrders.filter(o => !existingIds.has(o.id));
+                            if (trulyNew.length === 0) return prev;
+                            return [...trulyNew, ...prev];
+                        });
                         setNewOrderAlert(true);
                         setPendingOrdersActive(true);
                         
