@@ -28,26 +28,21 @@ export const diskDB = {
     },
 
     async bulkPut(collection, items) {
+        // Use sequential put instead of bulk endpoint for compatibility
+        console.log(`[diskStorage] bulkPut: Saving ${items.length} items to ${collection}`);
         try {
-            const res = await fetch(`${SERVER_URL}/bulk/${collection}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items })
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return { success: true, data: await res.json() };
-        } catch (err) {
-            console.error(`Disk Sync Bulk Error (${collection}):`, err.message);
-            // Fallback to sequential if bulk endpoint fails
-            try {
-                for (const item of items) {
-                    await this.put(collection, item);
+            for (const item of items) {
+                const result = await this.put(collection, item);
+                if (!result || result.success === false) {
+                    console.error(`[diskStorage] Failed to save item ${item.id}:`, result?.error);
+                    throw new Error(`Failed to save item ${item.id}: ${result?.error || 'Unknown error'}`);
                 }
-                return { success: true };
-            } catch (fallbackErr) {
-                console.error(`Disk Sync Bulk Fallback Error:`, fallbackErr.message);
-                return { success: false, error: fallbackErr.message };
             }
+            console.log(`[diskStorage] bulkPut: Successfully saved ${items.length} items`);
+            return { success: true, count: items.length };
+        } catch (err) {
+            console.error(`[diskStorage] bulkPut error:`, err.message);
+            return { success: false, error: err.message };
         }
     },
 
