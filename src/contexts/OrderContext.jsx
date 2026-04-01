@@ -22,36 +22,20 @@ export const OrderProvider = ({ children }) => {
         const loadOrders = async () => {
             setLoading(true);
             try {
-                // 1. Fetch from local machine (IndexedDB/Disk)
+                // 1. Fetch orders from machine drive
                 const diskData = await diskDB.getAll('orders');
                 if (diskData.length > 0) {
                     const sorted = diskData.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
                     setOrders(sorted);
-                    setPendingOrdersActive(sorted.some(o => o.status === 'pending'));
+                    const hasPending = sorted.some(order => order.status === 'pending');
+                    setPendingOrdersActive(hasPending);
                 }
 
-                // 2. Fetch from Cloud (Supabase) if disk is empty or to sync
-                const { data: cloudData, error } = await supabase
-                    .from('orders')
-                    .select('*')
-                    .order('createdAt', { ascending: false });
-
-                if (!error && cloudData && cloudData.length > 0) {
-                    const mapped = cloudData.map(o => ({
-                        ...o,
-                        customer: o.customer || { name: o.customerName, phone: o.customerPhone, address: o.customerAddress }
-                    }));
-                    setOrders(mapped);
-                    setPendingOrdersActive(mapped.some(o => o.status === 'pending'));
-                    // Background sync to disk
-                    await diskDB.bulkPut('orders', mapped);
-                } else if (error) {
-                    console.error("[Cloud] Order fetch error:", error.message);
-                }
-
+                // Cloud migration removed. Data flows locally for speed.
                 setLoading(false);
             } catch (err) {
-                console.error("[Storage] Order load failed:", err);
+                console.error("[Disk Storage] Order load failed:", err);
+            } finally {
                 setLoading(false);
             }
         };
@@ -103,31 +87,12 @@ export const OrderProvider = ({ children }) => {
             paymentStatus: orderData.paymentMethod === 'cod' ? 'pending' : 'pending_verification'
         };
 
-        // Prepare data for Supabase (Mapping to new schema)
-        const supabaseOrder = {
-            id: newOrder.id,
-            customerName: orderData.customer?.name || orderData.customerName || 'Guest',
-            customerPhone: orderData.customer?.phone || orderData.customerPhone || '',
-            customerAddress: orderData.customer?.address || orderData.customerAddress || '',
-            items: orderData.items,
-            total: orderData.total,
-            status: 'pending',
-            paymentMethod: orderData.paymentMethod || 'cod',
-            paymentStatus: orderData.paymentStatus || 'pending',
-            paymentProof: orderData.slipUrl || orderData.paymentProof || null, // Map slipUrl to paymentProof
-            note: orderData.customer?.memo || orderData.note || '',
-            createdAt: newOrder.createdAt,
-            updatedAt: newOrder.updatedAt
-        };
-
         // Save order directly to disk file (local_database.json)
         await diskDB.put('orders', newOrder);
         setOrders(prev => [newOrder, ...prev]);
         setNewOrderAlert(true);
         
-        supabase.from('orders').insert(supabaseOrder).then(({ error }) => {
-            if (error) console.error("[Supabase] Order sync failed:", error.message);
-        });
+        supabase.from('orders').insert(newOrder).then(() => {});
         return newOrder;
     };
 

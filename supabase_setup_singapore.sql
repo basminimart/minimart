@@ -1,23 +1,13 @@
 -- ===========================================================
--- 🇸🇬 MINIMART — FULL SETUP (Singapore)
+-- 🇸🇬 MINIMART — FULL SETUP สำหรับ Supabase Project ใหม่ (Singapore)
 -- ===========================================================
 -- วิธีใช้:
--- 1. เข้า SQL Editor ใน Supabase อันใหม่
--- 2. เคลียร์ข้อความเก่าทิ้งให้หมด! (Select All -> Delete)
--- 3. Paste SQL นี้ทั้งหมด -> กด Run ▶️
+-- 1. สร้าง Supabase Project ใหม่ → เลือก Region: Singapore (ap-southeast-1)
+-- 2. เข้า SQL Editor → New Query → Paste SQL นี้ทั้งหมด → Run ▶️
+-- 3. จด URL + anon key ของ project ใหม่
+-- 4. แก้ไฟล์ .env ให้ชี้ไป project ใหม่
+-- 5. ไปหน้า Settings → Restore Backup จาก project เดิม
 -- ===========================================================
-
--- ลบตารางเก่า (ถ้ามี) เพื่อให้สร้างใหม่ได้ครบทุกคอลัมน์
-DROP TABLE IF EXISTS price_history CASCADE;
-DROP TABLE IF EXISTS waste_logs CASCADE;
-DROP TABLE IF EXISTS expenses CASCADE;
-DROP TABLE IF EXISTS profiles CASCADE;
-DROP TABLE IF EXISTS settings CASCADE;
-DROP TABLE IF EXISTS orders CASCADE;
-DROP TABLE IF EXISTS shifts CASCADE;
-DROP TABLE IF EXISTS customers CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-
 
 -- ==================== PRODUCTS ====================
 CREATE TABLE IF NOT EXISTS products (
@@ -45,9 +35,6 @@ CREATE TABLE IF NOT EXISTS products (
     "soldToday" NUMERIC DEFAULT 0,
     "lastSoldAt" TIMESTAMPTZ,
     image TEXT,
-    "barcodeStatus" TEXT DEFAULT 'normal',
-    "fullPrice" NUMERIC DEFAULT 0,
-    "showInFridge" BOOLEAN DEFAULT false,
     "updatedAt" TIMESTAMPTZ DEFAULT now(),
     "createdAt" TIMESTAMPTZ DEFAULT now()
 );
@@ -179,7 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_waste_logs_product ON waste_logs ("productId");
 
 
 -- ===========================================================
--- 🔓 ROW LEVEL SECURITY (RLS)
+-- 🔓 ROW LEVEL SECURITY (RLS) — เปิดแบบ public access ผ่าน anon key
 -- ===========================================================
 
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
@@ -192,20 +179,7 @@ ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE waste_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
 
--- 1. Public Access Policies (สำหรับหน้า Store ให้ลูกค้าเข้าถึงได้)
-DROP POLICY IF EXISTS "Public Product Access" ON products;
-CREATE POLICY "Public Product Access" ON products FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Public Order Insert" ON orders;
-CREATE POLICY "Public Order Insert" ON orders FOR INSERT WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Public Order View" ON orders;
-CREATE POLICY "Public Order View" ON orders FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Public Settings Access" ON settings;
-CREATE POLICY "Public Settings Access" ON settings FOR SELECT USING (true);
-
--- 2. Staff Access Policies (สำหรับแอดมิน/พนักงาน)
+-- Allow full access for authenticated users
 CREATE POLICY "Allow all for authenticated" ON products FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for authenticated" ON customers FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for authenticated" ON shifts FOR ALL USING (true) WITH CHECK (true);

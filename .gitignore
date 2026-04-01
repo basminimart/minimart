@@ -14,20 +14,15 @@ dist-ssr
 
 # Environment variables
 .env
-.env.*
 .env.local
-
-# Local Data & Backups (Crucial to block!)
-local_database.json
-local_database_bak.json
-FINAL_EXPORT/
-product_images/
-Minimart_ULTIMATE_READY/
-*.bat
-*.mjs
-!sync_local_to_supabase.mjs
-!migrate_data.mjs
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

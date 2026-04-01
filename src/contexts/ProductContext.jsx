@@ -43,35 +43,23 @@ export const ProductProvider = ({ children }) => {
         const loadData = async () => {
             setLoading(true);
             try {
-                // 1. Fetch from local drive (IndexedDB/Disk) first
+                // 1. Fetch products directly from local drive (local_database.json)
                 const diskData = await diskDB.getAll('products');
                 
                 if (diskData.length > 0) {
                     setProducts(diskData);
+                    setLoading(false);
                     setConnectionStatus('offline_disk');
                     console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
                 }
 
-                // 2. Fallback/Sync with Cloud (Supabase)
-                // Fetch more than 1,000 by setting a larger range
-                const { data: cloudData, error } = await supabase
-                    .from('products')
-                    .select(MAIN_COLUMNS)
-                    .range(0, 2999); // ดึงข้อมูลสูงสุด 3,000 รายการเพื่อให้ครบ 2,333
-
-                if (!error && cloudData && cloudData.length > 0) {
-                    setProducts(cloudData);
-                    setConnectionStatus('connected');
-                    // Background sync to disk
-                    await diskDB.bulkPut('products', cloudData);
-                    console.log(`[Cloud] ☁️ Loaded ${cloudData.length} products from Supabase.`);
-                } else if (error) {
-                    console.error("[Cloud] Error fetching products:", error.message);
-                }
-
+                // Cloud sync removed for maximum speed.
+                setConnectionStatus('offline_disk');
+                setLoading(false);
+                setConnectionStatus('connected');
                 setLoading(false);
             } catch (err) {
-                console.error("[Storage] Data load failed:", err);
+                console.error("[Disk Storage] Data load failed:", err);
                 setLoading(false);
             }
         };

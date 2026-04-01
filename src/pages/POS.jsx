@@ -102,6 +102,11 @@ const POS = () => {
         setDraggedProduct(null);
     }, [draggedProduct]);
 
+    const handleDragEnd = useCallback((e) => {
+        e.preventDefault();
+        setDraggedProduct(null);
+    }, []);
+
     const handleProductClick = useCallback((product) => {
         playClick();
         if (!isReorderMode) {
@@ -214,7 +219,10 @@ const POS = () => {
     };
 
     const [displayLimit, setDisplayLimit] = useState(120);
-    const displayedProducts = filteredProducts.slice(0, displayLimit);
+    // Use localOrderedProducts when in reorder mode, otherwise use filteredProducts
+    const displayedProducts = isReorderMode 
+        ? localOrderedProducts 
+        : filteredProducts.slice(0, displayLimit);
 
     const styles = React.useMemo(() => ({
         container: {
@@ -555,7 +563,7 @@ const POS = () => {
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     {/* Title & Alert */}
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#111827', marginRight: 'auto' }}>
-                        {t('products')} ({products.length})
+                        {t('products')} ({isReorderMode ? localOrderedProducts.length : products.length})
                     </h2>
                     {newOrderAlert && (
                         <button
@@ -636,11 +644,12 @@ const POS = () => {
                             onDragStart={handleDragStart}
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
+                            onDragEnd={handleDragEnd}
                             styles={styles}
                             className={!isReorderMode ? "product-card-hover" : ""}
                         />
                     ))}
-                    {filteredProducts.length > displayedProducts.length && (
+                    {!isReorderMode && filteredProducts.length > displayedProducts.length && (
                         <div style={{ gridColumn: '1 / -1', padding: '1rem', textAlign: 'center' }}>
                             <Button
                                 variant="outline"

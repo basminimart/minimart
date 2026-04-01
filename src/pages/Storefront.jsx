@@ -54,7 +54,22 @@ const Storefront = () => {
             result = result.filter(p => p.name.toLowerCase().includes(term));
         }
 
-        return result.sort((a, b) => (Number(a.posIndex) || 0) - (Number(b.posIndex) || 0));
+        // Special sorting: Water packs at top for Recommended category
+        return result.sort((a, b) => {
+            const isWaterA = a.name && (a.name.includes('น้ำแพ็ค') || a.name.includes('แพ็คน้ำ'));
+            const isWaterB = b.name && (b.name.includes('น้ำแพ็ค') || b.name.includes('แพ็คน้ำ'));
+            
+            // Water packs come first
+            if (isWaterA && !isWaterB) return -1;
+            if (!isWaterA && isWaterB) return 1;
+            
+            // Then sort by posIndex
+            const indexA = Number(a.posIndex) || 0;
+            const indexB = Number(b.posIndex) || 0;
+            if (indexA !== indexB) return indexA - indexB;
+            
+            return (a.name || '').localeCompare(b.name || '');
+        });
     }, [allProducts, selectedCategory, debouncedSearchTerm]);
 
     const storeProducts = useMemo(() => {

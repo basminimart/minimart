@@ -18,20 +18,13 @@ export const CustomerProvider = ({ children }) => {
         const loadCustomers = async () => {
             setLoading(true);
             try {
-                // 2. Sync with Cloud (Supabase) if local is empty or to get updates
-                const { data: cloudData, error } = await supabase
-                    .from('customers')
-                    .select('*');
-
-                if (!error && cloudData && cloudData.length > 0) {
-                    setCustomers(cloudData.sort((a,b) => (a.name || '').localeCompare(b.name || '')));
-                    // Sync to local disk in background
-                    await diskDB.bulkPut('customers', cloudData);
-                    console.log(`[Cloud] ☁️ Loaded ${cloudData.length} customers from Supabase.`);
-                } else if (error) {
-                    console.error("[Cloud] Customer fetch error:", error.message);
+                // 1. Fetch customers from local drive file
+                const diskData = await diskDB.getAll('customers');
+                if (diskData.length > 0) {
+                    setCustomers(diskData.sort((a,b) => (a.name || '').localeCompare(b.name || '')));
                 }
 
+                // Cloud migration removed. Local only access.
                 setLoading(false);
             } catch (err) {
                 console.error("[Disk Storage] Customer load failed:", err);
