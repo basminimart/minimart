@@ -11,7 +11,7 @@ export const useProduct = () => {
     return context;
 };
 
-const MAIN_COLUMNS = "id, name, barcode, price, cost, stock, category, unit, packSize, packPrice, minStock, zone, showInPOS, posIndex, packBarcode, caseBarcode, caseSize, casePrice, showInStore, isRecommended, isHero, updatedAt, createdAt, soldToday";
+const MAIN_COLUMNS = "id, name, barcode, price, cost, stock, category, unit, packSize, packPrice, minStock, zone, showInPOS, posIndex, packBarcode, caseBarcode, caseSize, casePrice, showInStore, isRecommended, isHero, updatedAt, createdAt, soldToday, image";
 
 export const ProductProvider = ({ children }) => {
     const [products, setProducts] = useState([]);
@@ -69,18 +69,44 @@ export const ProductProvider = ({ children }) => {
                     return;
                 }
                 
-                const { data: supabaseData, error } = await supabase
-                    .from('products')
-                    .select(MAIN_COLUMNS);
+                // Fetch all products with pagination (Supabase has 1000 limit per query)
+                console.log('[ProductContext] Fetching all products from Supabase with pagination...');
+                let allProducts = [];
+                let from = 0;
+                const batchSize = 1000;
+                let hasMore = true;
                 
-                if (error) {
-                    console.error('[Supabase] Fetch error:', error);
-                    setConnectionStatus('error');
-                    setProducts([]);
-                } else if (supabaseData && supabaseData.length > 0) {
-                    setProducts(supabaseData);
+                while (hasMore) {
+                    const { data: batch, error } = await supabase
+                        .from('products')
+                        .select(MAIN_COLUMNS)
+                        .range(from, from + batchSize - 1);
+                    
+                    if (error) {
+                        console.error('[Supabase] Batch fetch error:', error);
+                        break;
+                    }
+                    
+                    if (batch && batch.length > 0) {
+                        allProducts = [...allProducts, ...batch];
+                        console.log(`[Supabase] Loaded batch ${from}-${from + batch.length}: ${batch.length} products`);
+                        
+                        if (batch.length < batchSize) {
+                            hasMore = false;
+                        } else {
+                            from += batchSize;
+                        }
+                    } else {
+                        hasMore = false;
+                    }
+                }
+                
+                console.log(`[Supabase] Total loaded: ${allProducts.length} products`);
+                
+                if (allProducts.length > 0) {
+                    setProducts(allProducts);
                     setConnectionStatus('connected');
-                    console.log(`[Supabase] ☁️ Loaded ${supabaseData.length} products from cloud.`);
+                    console.log(`[Supabase] ☁️ Loaded ${allProducts.length} products from cloud.`);
                 } else {
                     setProducts([]);
                     setConnectionStatus('connected');
@@ -92,15 +118,38 @@ export const ProductProvider = ({ children }) => {
                 // Final fallback: try Supabase even if diskDB threw error
                 try {
                     console.log('[ProductContext] Trying final Supabase fallback...');
-                    const { data: supabaseData, error } = await supabase
-                        .from('products')
-                        .select(MAIN_COLUMNS);
-                    if (error) {
-                        console.error('[Supabase] Final fallback error:', error);
-                    } else if (supabaseData && supabaseData.length > 0) {
-                        setProducts(supabaseData);
+                    let allProducts = [];
+                    let from = 0;
+                    const batchSize = 1000;
+                    let hasMore = true;
+                    
+                    while (hasMore) {
+                        const { data: batch, error } = await supabase
+                            .from('products')
+                            .select(MAIN_COLUMNS)
+                            .range(from, from + batchSize - 1);
+                        
+                        if (error) {
+                            console.error('[Supabase] Final fallback batch error:', error);
+                            break;
+                        }
+                        
+                        if (batch && batch.length > 0) {
+                            allProducts = [...allProducts, ...batch];
+                            if (batch.length < batchSize) {
+                                hasMore = false;
+                            } else {
+                                from += batchSize;
+                            }
+                        } else {
+                            hasMore = false;
+                        }
+                    }
+                    
+                    if (allProducts.length > 0) {
+                        setProducts(allProducts);
                         setConnectionStatus('connected');
-                        console.log(`[Supabase] ☁️ Final fallback loaded ${supabaseData.length} products.`);
+                        console.log(`[Supabase] ☁️ Final fallback loaded ${allProducts.length} products.`);
                     } else {
                         setProducts([]);
                         setConnectionStatus('error');
