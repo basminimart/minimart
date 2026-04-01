@@ -43,23 +43,33 @@ export const ProductProvider = ({ children }) => {
         const loadData = async () => {
             setLoading(true);
             try {
-                // 1. Fetch products directly from local drive (local_database.json)
+                // 1. Fetch from local drive (IndexedDB/Disk) first
                 const diskData = await diskDB.getAll('products');
                 
                 if (diskData.length > 0) {
                     setProducts(diskData);
-                    setLoading(false);
                     setConnectionStatus('offline_disk');
                     console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
                 }
 
-                // Cloud sync removed for maximum speed.
-                setConnectionStatus('offline_disk');
-                setLoading(false);
-                setConnectionStatus('connected');
+                // 2. Fallback to Cloud (Supabase) if disk is empty or to sync updates
+                const { data: cloudData, error } = await supabase
+                    .from('products')
+                    .select(MAIN_COLUMNS);
+
+                if (!error && cloudData && cloudData.length > 0) {
+                    setProducts(cloudData);
+                    setConnectionStatus('connected');
+                    // Background update local disk with cloud data
+                    await diskDB.bulkPut('products', cloudData);
+                    console.log(`[Cloud] ☁️ Loaded ${cloudData.length} products from Supabase.`);
+                } else if (error) {
+                    console.error("[Cloud] Error fetching products:", error.message);
+                }
+
                 setLoading(false);
             } catch (err) {
-                console.error("[Disk Storage] Data load failed:", err);
+                console.error("[Storage] Data load failed:", err);
                 setLoading(false);
             }
         };
