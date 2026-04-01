@@ -52,15 +52,17 @@ export const ProductProvider = ({ children }) => {
                     console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
                 }
 
-                // 2. Fallback to Cloud (Supabase) if disk is empty or to sync updates
+                // 2. Fallback/Sync with Cloud (Supabase)
+                // Fetch more than 1,000 by setting a larger range
                 const { data: cloudData, error } = await supabase
                     .from('products')
-                    .select(MAIN_COLUMNS);
+                    .select(MAIN_COLUMNS)
+                    .range(0, 2999); // ดึงข้อมูลสูงสุด 3,000 รายการเพื่อให้ครบ 2,333
 
                 if (!error && cloudData && cloudData.length > 0) {
                     setProducts(cloudData);
                     setConnectionStatus('connected');
-                    // Background update local disk with cloud data
+                    // Background sync to disk
                     await diskDB.bulkPut('products', cloudData);
                     console.log(`[Cloud] ☁️ Loaded ${cloudData.length} products from Supabase.`);
                 } else if (error) {
