@@ -266,7 +266,12 @@ export const ProductProvider = ({ children }) => {
             setProducts(newProducts);
 
             // 2. Persist to local drive
-            await diskDB.bulkPut('products', productsToUpdate);
+            const result = await diskDB.bulkPut('products', productsToUpdate);
+            
+            if (!result || !result.success) {
+                console.error("[ProductContext] bulkPut failed:", result?.error || "Unknown error");
+                throw new Error("บันทึกลงดิสก์ไม่สำเร็จ: " + (result?.error || "ไม่ทราบสาเหตุ"));
+            }
 
             // 3. Optional Background Supabase Sync
             updates.forEach(u => {

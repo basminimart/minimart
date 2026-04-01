@@ -35,12 +35,18 @@ export const diskDB = {
                 body: JSON.stringify({ items })
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return await res.json();
+            return { success: true, data: await res.json() };
         } catch (err) {
             console.error(`Disk Sync Bulk Error (${collection}):`, err.message);
             // Fallback to sequential if bulk endpoint fails
-            for (const item of items) {
-                await this.put(collection, item);
+            try {
+                for (const item of items) {
+                    await this.put(collection, item);
+                }
+                return { success: true };
+            } catch (fallbackErr) {
+                console.error(`Disk Sync Bulk Fallback Error:`, fallbackErr.message);
+                return { success: false, error: fallbackErr.message };
             }
         }
     },
