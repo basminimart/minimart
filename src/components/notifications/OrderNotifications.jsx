@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { supabase } from '../services/supabase';
-import { useOrder } from '../contexts/OrderContext';
+import { supabase } from '../../services/supabase';
+import { useOrder } from '../../contexts/OrderContext';
 import { Bell, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import './OrderNotifications.css';
 
