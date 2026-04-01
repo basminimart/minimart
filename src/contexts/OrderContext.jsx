@@ -22,19 +22,35 @@ export const OrderProvider = ({ children }) => {
         const loadOrders = async () => {
             setLoading(true);
             try {
-                // 1. Fetch orders from machine drive
+                // 1. Fetch orders from machine drive (local)
                 const diskData = await diskDB.getAll('orders');
                 if (diskData.length > 0) {
                     const sorted = diskData.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
                     setOrders(sorted);
                     const hasPending = sorted.some(order => order.status === 'pending');
                     setPendingOrdersActive(hasPending);
+                    console.log(`[OrderContext] Loaded ${diskData.length} orders from local disk`);
+                } else {
+                    // 2. Fallback to Supabase for Vercel deployment
+                    console.log('[OrderContext] Local disk empty, fetching orders from Supabase...');
+                    const { data: supabaseOrders, error } = await supabase
+                        .from('orders')
+                        .select('*')
+                        .order('createdAt', { ascending: false });
+                    
+                    if (error) {
+                        console.error('[OrderContext] Supabase fetch error:', error);
+                    } else if (supabaseOrders && supabaseOrders.length > 0) {
+                        setOrders(supabaseOrders);
+                        const hasPending = supabaseOrders.some(order => order.status === 'pending');
+                        setPendingOrdersActive(hasPending);
+                        console.log(`[OrderContext] Loaded ${supabaseOrders.length} orders from Supabase`);
+                    } else {
+                        console.log('[OrderContext] No orders found in Supabase');
+                    }
                 }
-
-                // Cloud migration removed. Data flows locally for speed.
-                setLoading(false);
             } catch (err) {
-                console.error("[Disk Storage] Order load failed:", err);
+                console.error("[OrderContext] Order load failed:", err);
             } finally {
                 setLoading(false);
             }
