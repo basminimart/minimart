@@ -44,7 +44,9 @@ export const ProductProvider = ({ children }) => {
             setLoading(true);
             try {
                 // 1. Fetch products directly from local drive (local_database.json)
+                console.log('[ProductContext] Attempting to fetch from local disk...');
                 const diskData = await diskDB.getAll('products');
+                console.log(`[ProductContext] Disk returned ${diskData.length} products`);
                 
                 if (diskData.length > 0) {
                     setProducts(diskData);
@@ -56,6 +58,7 @@ export const ProductProvider = ({ children }) => {
 
                 // 2. Fallback to Supabase for Vercel deployment
                 console.log('[ProductContext] Local disk empty, fetching from Supabase...');
+                console.log('[ProductContext] Supabase URL:', supabase.supabaseUrl);
                 const { data: supabaseData, error } = await supabase
                     .from('products')
                     .select(MAIN_COLUMNS);
@@ -63,6 +66,7 @@ export const ProductProvider = ({ children }) => {
                 if (error) {
                     console.error('[Supabase] Fetch error:', error);
                     setConnectionStatus('error');
+                    setProducts([]);
                 } else if (supabaseData && supabaseData.length > 0) {
                     setProducts(supabaseData);
                     setConnectionStatus('connected');
@@ -77,15 +81,23 @@ export const ProductProvider = ({ children }) => {
                 console.error("[ProductContext] Data load failed:", err);
                 // Final fallback: try Supabase even if diskDB threw error
                 try {
-                    const { data: supabaseData } = await supabase
+                    console.log('[ProductContext] Trying final Supabase fallback...');
+                    const { data: supabaseData, error } = await supabase
                         .from('products')
                         .select(MAIN_COLUMNS);
-                    if (supabaseData && supabaseData.length > 0) {
+                    if (error) {
+                        console.error('[Supabase] Final fallback error:', error);
+                    } else if (supabaseData && supabaseData.length > 0) {
                         setProducts(supabaseData);
                         setConnectionStatus('connected');
+                        console.log(`[Supabase] ☁️ Final fallback loaded ${supabaseData.length} products.`);
+                    } else {
+                        setProducts([]);
+                        setConnectionStatus('error');
                     }
                 } catch (supabaseErr) {
                     console.error('[Supabase] Final fallback failed:', supabaseErr);
+                    setConnectionStatus('error');
                 }
                 setLoading(false);
             }
