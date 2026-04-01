@@ -43,81 +43,10 @@ export const ProductProvider = ({ children }) => {
         const loadData = async () => {
             setLoading(true);
             try {
-                // 1. Fetch products directly from local drive (local_database.json)
-                console.log('[ProductContext] Attempting to fetch from local disk...');
-                const diskData = await diskDB.getAll('products');
-                console.log(`[ProductContext] Disk returned ${diskData.length} products`);
+                // 1. Try Supabase first (faster for online deployment)
+                console.log('[ProductContext] Fetching from Supabase...');
                 
-                if (diskData.length > 0) {
-                    setProducts(diskData);
-                    setLoading(false);
-                    setConnectionStatus('offline_disk');
-                    console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
-                    return; // Exit early if local data loaded successfully
-                }
-
-                // 2. Fallback to Supabase for Vercel deployment
-                console.log('[ProductContext] Local disk empty, fetching from Supabase...');
-                console.log('[ProductContext] supabase object:', supabase);
-                console.log('[ProductContext] supabase.from:', supabase?.from);
-                
-                if (!supabase || !supabase.from) {
-                    console.error('[ProductContext] Supabase client not initialized properly!');
-                    setProducts([]);
-                    setConnectionStatus('error');
-                    setLoading(false);
-                    return;
-                }
-                
-                // Fetch all products with pagination (Supabase has 1000 limit per query)
-                console.log('[ProductContext] Fetching all products from Supabase with pagination...');
-                let allProducts = [];
-                let from = 0;
-                const batchSize = 1000;
-                let hasMore = true;
-                
-                while (hasMore) {
-                    const { data: batch, error } = await supabase
-                        .from('products')
-                        .select(MAIN_COLUMNS)
-                        .range(from, from + batchSize - 1);
-                    
-                    if (error) {
-                        console.error('[Supabase] Batch fetch error:', error);
-                        break;
-                    }
-                    
-                    if (batch && batch.length > 0) {
-                        allProducts = [...allProducts, ...batch];
-                        console.log(`[Supabase] Loaded batch ${from}-${from + batch.length}: ${batch.length} products`);
-                        
-                        if (batch.length < batchSize) {
-                            hasMore = false;
-                        } else {
-                            from += batchSize;
-                        }
-                    } else {
-                        hasMore = false;
-                    }
-                }
-                
-                console.log(`[Supabase] Total loaded: ${allProducts.length} products`);
-                
-                if (allProducts.length > 0) {
-                    setProducts(allProducts);
-                    setConnectionStatus('connected');
-                    console.log(`[Supabase] ☁️ Loaded ${allProducts.length} products from cloud.`);
-                } else {
-                    setProducts([]);
-                    setConnectionStatus('connected');
-                    console.log('[Supabase] No products found in cloud.');
-                }
-                setLoading(false);
-            } catch (err) {
-                console.error("[ProductContext] Data load failed:", err);
-                // Final fallback: try Supabase even if diskDB threw error
-                try {
-                    console.log('[ProductContext] Trying final Supabase fallback...');
+                if (supabase && supabase.from) {
                     let allProducts = [];
                     let from = 0;
                     const batchSize = 1000;
@@ -130,7 +59,7 @@ export const ProductProvider = ({ children }) => {
                             .range(from, from + batchSize - 1);
                         
                         if (error) {
-                            console.error('[Supabase] Final fallback batch error:', error);
+                            console.error('[Supabase] Batch fetch error:', error);
                             break;
                         }
                         
@@ -146,18 +75,36 @@ export const ProductProvider = ({ children }) => {
                         }
                     }
                     
+                    console.log(`[Supabase] Loaded ${allProducts.length} products`);
+                    
                     if (allProducts.length > 0) {
                         setProducts(allProducts);
+                        setLoading(false);
                         setConnectionStatus('connected');
-                        console.log(`[Supabase] ☁️ Final fallback loaded ${allProducts.length} products.`);
-                    } else {
-                        setProducts([]);
-                        setConnectionStatus('error');
+                        return; // Success, exit early
                     }
-                } catch (supabaseErr) {
-                    console.error('[Supabase] Final fallback failed:', supabaseErr);
-                    setConnectionStatus('error');
                 }
+
+                // 2. Fallback to local disk if Supabase empty/failed
+                console.log('[ProductContext] Supabase empty, trying local disk...');
+                const diskData = await diskDB.getAll('products');
+                console.log(`[ProductContext] Disk returned ${diskData.length} products`);
+                
+                if (diskData.length > 0) {
+                    setProducts(diskData);
+                    setConnectionStatus('offline_disk');
+                    console.log(`[Disk Storage] 💾 Loaded ${diskData.length} products from machine drive.`);
+                } else {
+                    setProducts([]);
+                    setConnectionStatus('offline_disk');
+                    console.log('[ProductContext] No products found anywhere.');
+                }
+                setLoading(false);
+                
+            } catch (err) {
+                console.error("[ProductContext] Data load failed:", err);
+                setProducts([]);
+                setConnectionStatus('error');
                 setLoading(false);
             }
         };
