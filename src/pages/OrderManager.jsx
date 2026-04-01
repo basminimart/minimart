@@ -4,6 +4,7 @@ import { useProduct } from '../contexts/ProductContext';
 import { Clock, Package, Truck, CheckCircle, FileText, MapPin, Trash2, XCircle, Edit, Volume2, VolumeX } from 'lucide-react';
 import OrderDetailsModal from '../components/inventory/OrderDetailsModal';
 import EditOrderModal from '../components/inventory/EditOrderModal';
+import OrderNotifications from '../components/notifications/OrderNotifications';
 import './OrderManager.css';
 
 // Base64 generic bell/ding sound (very short and clean)
@@ -222,7 +223,10 @@ const OrderManager = () => {
 
     return (
         <div className="order-manager-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            {/* 🔔 Notification Bar for Local POS */}
+            <OrderNotifications />
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', marginTop: '60px' }}>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#111827', margin: 0 }}>จัดการออเดอร์เดลิเวอรี่ 🛵</h2>
 
                 <button
