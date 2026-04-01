@@ -22,32 +22,44 @@ export const OrderProvider = ({ children }) => {
         const loadOrders = async () => {
             setLoading(true);
             try {
-                // 1. Fetch orders from machine drive (local)
+                // 1. Load from local disk first (fast)
                 const diskData = await diskDB.getAll('orders');
                 if (diskData.length > 0) {
                     const sorted = diskData.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
                     setOrders(sorted);
-                    const hasPending = sorted.some(order => order.status === 'pending');
-                    setPendingOrdersActive(hasPending);
-                    console.log(`[OrderContext] Loaded ${diskData.length} orders from local disk`);
-                } else {
-                    // 2. Fallback to Supabase for Vercel deployment
-                    console.log('[OrderContext] Local disk empty, fetching orders from Supabase...');
-                    const { data: supabaseOrders, error } = await supabase
-                        .from('orders')
-                        .select('*')
-                        .order('createdAt', { ascending: false });
+                    console.log(`[OrderContext] Loaded ${diskData.length} orders from local disk (initial)`);
+                }
+
+                // 2. ALWAYS fetch from Supabase to get latest (merge with local)
+                console.log('[OrderContext] Fetching latest orders from Supabase...');
+                const { data: supabaseOrders, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .order('createdAt', { ascending: false });
+                
+                if (error) {
+                    console.error('[OrderContext] Supabase fetch error:', error);
+                } else if (supabaseOrders && supabaseOrders.length > 0) {
+                    // Merge: Supabase data takes priority, add any missing local orders
+                    const mergedMap = new Map();
                     
-                    if (error) {
-                        console.error('[OrderContext] Supabase fetch error:', error);
-                    } else if (supabaseOrders && supabaseOrders.length > 0) {
-                        setOrders(supabaseOrders);
-                        const hasPending = supabaseOrders.some(order => order.status === 'pending');
-                        setPendingOrdersActive(hasPending);
-                        console.log(`[OrderContext] Loaded ${supabaseOrders.length} orders from Supabase`);
-                    } else {
-                        console.log('[OrderContext] No orders found in Supabase');
-                    }
+                    // Add Supabase orders first (newer)
+                    supabaseOrders.forEach(o => mergedMap.set(o.id, o));
+                    
+                    // Add local orders if not in Supabase (for offline orders)
+                    diskData.forEach(o => {
+                        if (!mergedMap.has(o.id)) {
+                            mergedMap.set(o.id, o);
+                        }
+                    });
+                    
+                    const merged = Array.from(mergedMap.values())
+                        .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    
+                    setOrders(merged);
+                    const hasPending = merged.some(order => order.status === 'pending');
+                    setPendingOrdersActive(hasPending);
+                    console.log(`[OrderContext] Merged ${merged.length} orders (Supabase: ${supabaseOrders.length}, Local: ${diskData.length})`);
                 }
             } catch (err) {
                 console.error("[OrderContext] Order load failed:", err);
@@ -59,29 +71,81 @@ export const OrderProvider = ({ children }) => {
         loadOrders();
 
         // 3. 🚀 REAL-TIME CLOUD SYNC: Listen for online orders from Vercel/Store
-        console.log("[Hybrid Mode] 📡 Listening for incoming online orders...");
+        console.log("[Hybrid Mode] 📡 Setting up realtime subscription...");
         const channel = supabase
             .channel('public:orders')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
                 const newOrder = payload.new;
                 console.log("[Hybrid Mode] 🔔 NEW ONLINE ORDER RECEIVED:", newOrder.id);
+                console.log("[Hybrid Mode] Order details:", { id: newOrder.id, customer: newOrder.customer?.name, total: newOrder.total });
                 
                 // Save to Machine Drive immediately
-                await diskDB.put('orders', newOrder);
+                try {
+                    await diskDB.put('orders', newOrder);
+                    console.log("[Hybrid Mode] Saved to local disk");
+                } catch (err) {
+                    console.error("[Hybrid Mode] Failed to save to disk:", err);
+                }
                 
                 // Update Local UI
                 setOrders(prev => {
                     if (prev.find(o => o.id === newOrder.id)) return prev;
+                    console.log("[Hybrid Mode] Adding new order to state");
                     return [newOrder, ...prev];
                 });
+                setPendingOrdersActive(true);
                 setNewOrderAlert(true);
-                
-                // Optional: Play alert sound if you have one
             })
-            .subscribe();
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, async (payload) => {
+                const updatedOrder = payload.new;
+                console.log("[Hybrid Mode] 🔄 ORDER UPDATED:", updatedOrder.id, "Status:", updatedOrder.status);
+                
+                // Update local state
+                setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+                
+                // Update disk
+                await diskDB.put('orders', updatedOrder);
+            })
+            .subscribe((status) => {
+                console.log("[Hybrid Mode] Realtime subscription status:", status);
+            });
+
+        // 4. POLLING BACKUP: Check for new orders every 10 seconds (in case realtime fails)
+        const pollingInterval = setInterval(async () => {
+            try {
+                const { data: latestOrders, error } = await supabase
+                    .from('orders')
+                    .select('*')
+                    .order('createdAt', { ascending: false })
+                    .limit(20);
+                
+                if (!error && latestOrders) {
+                    // Check if we have new orders not in current state
+                    const currentIds = new Set(orders.map(o => o.id));
+                    const newOrders = latestOrders.filter(o => !currentIds.has(o.id));
+                    
+                    if (newOrders.length > 0) {
+                        console.log("[Polling] Found", newOrders.length, "new orders");
+                        // Add to state
+                        setOrders(prev => [...newOrders, ...prev]);
+                        setNewOrderAlert(true);
+                        setPendingOrdersActive(true);
+                        
+                        // Save to disk
+                        for (const order of newOrders) {
+                            await diskDB.put('orders', order);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("[Polling] Error:", err);
+            }
+        }, 10000); // 10 seconds
 
         return () => {
+            console.log("[Hybrid Mode] Cleaning up subscriptions...");
             supabase.removeChannel(channel);
+            clearInterval(pollingInterval);
         };
     }, []);
 
