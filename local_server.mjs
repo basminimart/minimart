@@ -132,6 +132,22 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Serve static files from dist folder (CSS, JS, images, etc.)
+    if (parts.length > 0 && parts[0] !== 'api') {
+        const staticPath = path.join(DIST_DIR, url.pathname);
+        try {
+            const stat = await fs.stat(staticPath);
+            if (stat.isFile()) {
+                return await serveStatic(staticPath, res);
+            }
+        } catch {
+            // Not a file, serve index.html for SPA routing
+        }
+        
+        // For any non-API route, serve index.html (SPA fallback)
+        return await serveStatic(path.join(DIST_DIR, 'index.html'), res);
+    }
+
     if (parts[0] === 'api') {
         // GET Collection
         if (req.method === 'GET') {
